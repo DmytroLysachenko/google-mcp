@@ -29,6 +29,16 @@ def _redact_email(email: str) -> str:
     return f"{masked}@{domain}"
 
 
+def _get_header(headers: dict, key: str) -> str:
+    if key in headers:
+        return headers.get(key, "")
+    key_lower = key.lower()
+    for header_key, value in headers.items():
+        if header_key.lower() == key_lower:
+            return value or ""
+    return ""
+
+
 class AuthInfoMiddleware(Middleware):
     """
     Middleware to extract authentication information from JWT tokens
@@ -58,18 +68,22 @@ class AuthInfoMiddleware(Middleware):
                 logger.info(
                     "Auth headers present=%s mcp_session=%s",
                     "authorization" in {k.lower() for k in headers.keys()},
-                    headers.get("mcp-session-id") or headers.get("x-session-id"),
+                    _get_header(headers, "mcp-session-id")
+                    or _get_header(headers, "x-session-id"),
                 )
                 logger.debug("Processing HTTP headers for authentication")
 
                 # Get the Authorization header
-                auth_header = headers.get("authorization", "")
+                auth_header = _get_header(headers, "authorization")
+                bearer_prefix = auth_header[:7] if auth_header else ""
+                logger.info("Authorization header prefix=%s", bearer_prefix or "none")
                 if auth_header.startswith("Bearer "):
                     token_str = auth_header[7:]  # Remove "Bearer " prefix
                     logger.debug("Found Bearer token")
 
                     # For Google OAuth tokens (ya29.*), we need to verify them differently
                     if token_str.startswith("ya29."):
+                        logger.info("Bearer token kind=google_access_token")
                         logger.debug("Detected Google OAuth access token format")
 
                         # Verify the token to get user info
@@ -84,10 +98,15 @@ class AuthInfoMiddleware(Middleware):
                                     token_str
                                 )
                                 if verified_auth:
+                                    logger.info("Google token verified")
                                     # Extract user info from verified token
                                     user_email = None
                                     if hasattr(verified_auth, "claims"):
                                         user_email = verified_auth.claims.get("email")
+                                    if not user_email:
+                                        logger.warning(
+                                            "Google token verified but email claim missing"
+                                        )
 
                                     # Get expires_at, defaulting to 1 hour from now if not available
                                     if hasattr(verified_auth, "expires_at"):
@@ -161,7 +180,10 @@ class AuthInfoMiddleware(Middleware):
                                     logger.error("Failed to verify Google OAuth token")
                                 # Don't set authenticated_user_email if verification failed
                             except Exception as e:
-                                logger.error(f"Error verifying Google OAuth token: {e}")
+                                logger.error(
+                                    "Error verifying Google OAuth token: %s",
+                                    e.__class__.__name__,
+                                )
                                 # Still store the unverified token - service decorator will handle verification
                                 access_token = SimpleNamespace(
                                     token=token_str,
@@ -207,11 +229,27 @@ class AuthInfoMiddleware(Middleware):
                             context.fastmcp_context.set_state(
                                 "token_type", "google_oauth"
                             )
-                    logger.info("Bearer token processed for auth")
-
                     else:
+                        logger.info("Bearer token kind=jwt_or_other")
                         # Decode JWT to get user info
                         try:
+                            verified_auth = None
+                            try:
+                                from core.server import get_auth_provider
+
+                                auth_provider = get_auth_provider()
+                                if auth_provider:
+                                    verified_auth = await auth_provider.verify_token(
+                                        token_str
+                                    )
+                                    if verified_auth:
+                                        logger.info("JWT token verified via provider")
+                            except Exception as e:
+                                logger.error(
+                                    "Error verifying JWT token: %s",
+                                    e.__class__.__name__,
+                                )
+
                             token_payload = jwt.decode(
                                 token_str, options={"verify_signature": False}
                             )
@@ -271,9 +309,17 @@ class AuthInfoMiddleware(Middleware):
                             )
 
                             # Set the definitive authentication state for JWT tokens
-                            user_email = token_payload.get(
-                                "email", token_payload.get("username")
-                            )
+                            user_email = None
+                            if verified_auth and hasattr(verified_auth, "claims"):
+                                user_email = verified_auth.claims.get("email")
+                                if not user_email:
+                                    logger.warning(
+                                        "Verified JWT missing email claim"
+                                    )
+                            if not user_email:
+                                user_email = token_payload.get(
+                                    "email", token_payload.get("username")
+                                )
                             if user_email:
                                 context.fastmcp_context.set_state(
                                     "authenticated_user_email", user_email
@@ -292,6 +338,7 @@ class AuthInfoMiddleware(Middleware):
                             logger.error(f"Failed to decode JWT: {e}")
                         except Exception as e:
                             logger.error(f"Error processing JWT: {e}")
+                    logger.info("Bearer token processed for auth")
                 else:
                     logger.debug("No Bearer token in Authorization header")
             else:
