@@ -8,7 +8,7 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from fastmcp.server.auth.providers.google import GoogleProvider
-from fastmcp.server.auth.routes import cors_middleware
+from mcp.server.auth.routes import cors_middleware
 from fastmcp.server.auth.oauth_proxy import ProxyDCRClient
 from mcp.server.auth.errors import stringify_pydantic_error
 from mcp.server.auth.handlers.register import RegistrationErrorResponse
