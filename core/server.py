@@ -12,6 +12,7 @@ from fastmcp import FastMCP
 from fastmcp.server.auth.providers.google import GoogleProvider
 
 from auth.oauth21_session_store import get_oauth21_session_store, set_auth_provider
+from auth.static_client_provider import StaticClientGoogleProvider
 from auth.google_auth import handle_auth_callback, start_auth_flow, check_client_secrets
 from auth.mcp_session_middleware import MCPSessionMiddleware
 from auth.oauth_responses import (
@@ -66,6 +67,11 @@ server.add_middleware(auth_info_middleware)
 def _parse_bool_env(value: str) -> bool:
     """Parse environment variable string to boolean."""
     return value.lower() in ("1", "true", "yes", "on")
+
+def _parse_csv_env(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def set_transport_mode(mode: str):
@@ -369,7 +375,27 @@ def configure_server_for_http():
                 )
             else:
                 # Standard OAuth 2.1 mode: use FastMCP's GoogleProvider
-                provider = GoogleProvider(
+                static_client_id = (
+                    os.getenv("WORKSPACE_MCP_STATIC_CLIENT_ID", "").strip() or None
+                )
+                static_client_secret = (
+                    os.getenv("WORKSPACE_MCP_STATIC_CLIENT_SECRET", "").strip() or None
+                )
+                static_redirect_uris = _parse_csv_env(
+                    os.getenv("WORKSPACE_MCP_STATIC_CLIENT_REDIRECT_URIS")
+                )
+                static_auth_method = (
+                    os.getenv("WORKSPACE_MCP_STATIC_CLIENT_AUTH_METHOD", "").strip()
+                    or None
+                )
+
+                provider_class = (
+                    StaticClientGoogleProvider
+                    if static_client_id and static_client_secret
+                    else GoogleProvider
+                )
+
+                provider = provider_class(
                     client_id=config.client_id,
                     client_secret=config.client_secret,
                     base_url=config.get_oauth_base_url(),
@@ -377,6 +403,10 @@ def configure_server_for_http():
                     required_scopes=required_scopes,
                     client_storage=client_storage,
                     jwt_signing_key=jwt_signing_key,
+                    static_client_id=static_client_id,
+                    static_client_secret=static_client_secret,
+                    static_redirect_uris=static_redirect_uris,
+                    static_auth_method=static_auth_method,
                 )
                 # Enable protocol-level auth
                 server.auth = provider

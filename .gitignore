@@ -30,3 +30,8 @@ mcp_server_debug.log
 # ---- Local development files -------------------------------------------
 /.credentials
 /.claude
+
+
+.tmp_mcp
+.tmp_fastmcp
+scripts
