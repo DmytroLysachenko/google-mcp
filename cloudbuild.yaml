@@ -22,6 +22,8 @@ steps:
       ]
 images:
   - $_IMAGE
+options:
+  logging: CLOUD_LOGGING_ONLY
 substitutions:
   _REGION: "europe-central2"
   _IMAGE: "europe-central2-docker.pkg.dev/travel-app-461309/workspace-mcp/workspace-mcp:latest"

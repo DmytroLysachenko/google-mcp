@@ -144,7 +144,7 @@ uv run main.py --tools gmail drive
 
 </details>
 
-### 1. OneClick Claude Desktop Install (Recommended)
+### 1. One-Click Claude Desktop Install (Recommended)
 
 1. **Download:** Grab the latest `google_workspace_mcp.dxt` from the “Releases” page
 2. **Install:** Double-click the file – Claude Desktop opens and prompts you to **Install**
