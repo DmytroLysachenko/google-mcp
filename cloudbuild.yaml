@@ -1,0 +1,27 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "$_IMAGE", "."]
+  - name: gcr.io/cloud-builders/docker
+    args: ["push", "$_IMAGE"]
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      [
+        "run",
+        "deploy",
+        "workspace-mcp",
+        "--image",
+        "$_IMAGE",
+        "--region",
+        "$_REGION",
+        "--platform",
+        "managed",
+        "--port",
+        "8000",
+        "--allow-unauthenticated"
+      ]
+images:
+  - $_IMAGE
+substitutions:
+  _REGION: "europe-central2"
+  _IMAGE: "europe-central2-docker.pkg.dev/travel-app-461309/workspace-mcp/workspace-mcp:latest"
